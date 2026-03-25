@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Camera Importer</title>
+</head>
+<body>
+<h1>TrueNAS Camera Importer</h1>
+
+<p id="status">Checking camera...</p>
+
+<select id="destination">
+    <option value="gopro">GoPro</option>
+    <option value="r100">Canon R100</option>
+    <option value="xs">Canon XS</option>
+</select>
+
+<p id="filecount"></p>
+
+<button onclick="startImport()">Start Import</button>
+
+<progress id="progressBar" value="0" max="100" style="width:100%; display:none;"></progress>
+<p id="progressText"></p>
+
+<pre id="log"></pre>
+
+<script>
+let totalFiles = 0;
+
+async function scanCamera() {
+    let res = await fetch('/scan');
+    let data = await res.json();
+
+    document.getElementById('status').innerText =
+        `Camera: ${data.device || 'None'}`;
+
+    document.getElementById('destination').value = data.camera_type || "gopro";
+
+    document.getElementById('filecount').innerText =
+        `New: ${data.new_files} | Existing: ${data.already_imported}`;
+
+    totalFiles = data.new_files + data.already_imported;
+}
+
+async function startImport() {
+    let destination = document.getElementById('destination').value;
+
+    const res = await fetch('/import', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({destination})
+    });
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+
+    let progressBar = document.getElementById('progressBar');
+    let progressText = document.getElementById('progressText');
+    let log = document.getElementById('log');
+
+    progressBar.style.display = "block";
+    progressBar.value = 0;
+
+    while(true) {
+        const { done, value } = await reader.read();
+        if(done) break;
+
+        const text = decoder.decode(value);
+        log.innerText += text;
+
+        let match = text.match(/^(\d+)\/(\d+)/);
+        if(match) {
+            let current = parseInt(match[1]);
+            let total = parseInt(match[2]);
+            progressBar.value = (current / total) * 100;
+            progressText.innerText = `${current} / ${total}`;
+        }
+    }
+
+    progressBar.value = 100;
+    progressText.innerText = "Done!";
+    scanCamera();
+}
+
+setInterval(scanCamera, 5000);
+scanCamera();
+</script>
+</body>
+</html>
